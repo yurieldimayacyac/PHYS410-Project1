@@ -1,0 +1,185 @@
+plot_r = [];
+
+core1_x_6 = []; downsample_core1_x_7 = []; downsample_core1_x_8 = [];
+t6 = []; t7 = []; t8 = [];
+t_plot = [];
+
+% Initial Conditions & Masses
+mc1 = 15;
+mc2 = 7.5;
+m_tot = mc1+mc2;
+
+d = 1.5;
+
+r1 = mc2/m_tot * d; 
+r2 = mc1/m_tot * d;
+
+v1 = sqrt(mc2*r1)/d;
+v2 = sqrt(mc1*r2)/d;
+
+tmax = 6;
+
+for l = 7:9
+    % Number of cores + stars
+    N_cores = 2;
+    N_stars = 0;
+   
+    % Number of Time Steps
+    nt = 2^l + 1;
+
+    % Timestep Size
+    delta_t = tmax/(2^l);
+    %tl = (0:nt-1)' * delta_t;
+    
+    % Store position vector r and mass as an array
+    % r(Body Index, Coordinate, Number of Time Steps)
+    r_c = zeros(N_cores,3,nt);    
+    mass_c = [mc1, mc2];
+    
+    % Initial Values of cores 
+
+    r_c(1,:,1) = [r1, 0, 0]; 
+    r_c(2,:,1) = [-r2, 0, 0]; 
+
+    v0_c1 = [0,v1,0];
+    v0_c2 = [0,-v2,0];
+
+    a0_c1 = nbodyaccn(r_c(1,:,1),r_c(2,:,1),mc2);
+    a0_c2 = nbodyaccn(r_c(2,:,1),r_c(1,:,1),mc1);
+
+    % Find position at n = 2 using Taylor Series
+    r_c(1,:,2) = r_c(1,:,1) + v0_c1*delta_t + 0.5*a0_c1*delta_t^2;
+    r_c(2,:,2) = r_c(2,:,1) + v0_c2*delta_t+ 0.5*a0_c2*delta_t^2;
+  
+    % Finite Difference Solver
+    
+    for n = 2 : nt-1
+    
+        tn = (n-1) * delta_t;
+    
+        % Core - Core reaction
+        for i = 1 : N_cores
+    
+            total_acceleration = zeros(1,3);
+        
+            for j = 1 : N_cores
+        
+                % Do not count core's interaction with itself
+                if i == j 
+                    continue 
+                end 
+    
+                % Calculate acceleration based on gravity
+
+                accel = nbodyaccn(squeeze(r_c(i,:,n)), squeeze(r_c(j,:,n)), mass_c(j));
+                total_acceleration = total_acceleration + accel;
+    
+            end 
+    
+            % Add advanced position into position vector
+            r_c(i,:,n+1) = 2*r_c(i,:,n) - r_c(i,:,n-1) + total_acceleration * delta_t^2;
+    
+        end 
+        
+        % Star - Core reaction
+        for i = 1 : N_stars
+    
+            total_acceleration = zeros(1,3);
+        
+            for j = 1: N_cores
+        
+                % Calculate acceleration based on gravity
+                accel = nbodyaccn(r_s(i,:,n), r_c(j,:,n), mass_c(j));
+    
+                % Superpose acceleration of i-th star due to j-th core
+                total_acceleration = total_acceleration + accel;
+    
+            end 
+    
+            % Add advanced position into position vector
+            r_s(i,:,n+1) = 2*r_s(i,:,n) - r_s(i,:,n-1) + total_acceleration * delta_t^2;
+        
+        end 
+        
+    end 
+    
+    t_plot = (0:nt-1)*delta_t;
+
+    if (l == 7)
+        t7 = t_plot ;
+
+        color1 = 'r-';
+        color2 = 'b-';
+
+        display_core1 = 'l = 7 Core 1';
+        display_core2 = 'l = 7 Core 2';
+
+        core1_x_7 = squeeze(r_c(1,1,:));
+        size(core1_x_7)
+
+    elseif (l == 8)
+
+        t8 = t_plot;
+
+        color1 = 'r--';
+        color2 = 'b--';
+
+        display_core1 = 'l = 8 Core 1';
+        display_core2 = 'l = 8 Core 2';
+
+        core1_x_8 = squeeze(r_c(1,1,:));
+        downsample_core1_x_8 = core1_x_8(1:2:end);
+        size(downsample_core1_x_8)
+
+    else 
+
+        t9 = t_plot;
+
+        color1 = 'rx';
+        color2 = 'bx';
+
+        display_core1 = 'l = 9 Core 1';
+        display_core2 = 'l = 9 Core 2';
+
+        core1_x_9 = squeeze(r_c(1,1,:));
+        downsample_core1_x_9 = core1_x_9(1:4:end);
+        size(downsample_core1_x_9)
+
+        xlabel('t Time'); ylabel('x/y Position'); legend('show'); grid on; axis equal;
+
+    end 
+
+end 
+
+% Plot the differences
+t = t7; % Reference time scale
+dx78_core1 = downsample_core1_x_8 - core1_x_7;
+dx89_core1 = downsample_core1_x_9 - downsample_core1_x_8;
+
+fig = figure('Position',[100 100 900 600]); 
+ax  = axes('Parent',fig);
+hold(ax,'on');
+title('Convergence Error Between Levels 7–9');
+
+axis(ax,'auto');     
+axis(ax,'normal');
+set(ax,'PlotBoxAspectRatioMode','auto','DataAspectRatioMode','auto');
+
+xlabel('t Time');
+ylabel('x Position');
+ymax = max(abs([dx78_core1; 4*dx89_core1]));
+ylim([-1.5*ymax, 1.5*ymax]);
+legend('show');
+grid on;
+
+plot(t, dx78_core1, color1, 'DisplayName', 'Error Between Levels 7 & 8');
+plot(t, 4*dx89_core1, color2, 'DisplayName', 'Error Between Levels 8 & 9');
+
+% Test code
+zero_filter = abs(dx89_core1) > 1e-12; % Avoid division by 0
+ratio_pointwise = zeros(size(dx89_core1));
+ratio_pointwise(zero_filter) = dx78_core1(zero_filter) ./ dx89_core1(zero_filter);
+
+fprintf('Median ratio dx78/dx89 = %.3f\n', median(ratio_pointwise(zero_filter)));
+fprintf('||dx89||_inf / ||dx78||_inf = %.3f\n', ...
+    norm(dx89_core1, inf) / max(eps, norm(dx78_core1, inf)));
